@@ -4,7 +4,12 @@
 # only the scan result is kept, for 3 days.
 name: Self-build (no publish)
 
+# workflow_dispatch only works once this file is on the default branch, which
+# this fork leaves untouched; until then a push to selfbuild-ci builds the
+# refs listed in DEFAULT_REFS.
 on:
+  push:
+    branches: [selfbuild-ci]
   workflow_dispatch:
     inputs:
       ref:
@@ -15,24 +20,46 @@ on:
 permissions:
   contents: read
 
+env:
+  DEFAULT_REFS: '["sci-0.33.6-deps","sci-0.34.1"]'
+
 jobs:
+  refs:
+    runs-on: ubuntu-24.04
+    outputs:
+      refs: ${{ steps.r.outputs.refs }}
+    steps:
+      - id: r
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          if [ -n "$INPUT_REF" ]; then
+            echo "refs=$(jq -cn --arg r "$INPUT_REF" '[$r]')" >> "$GITHUB_OUTPUT"
+          else
+            echo "refs=$DEFAULT_REFS" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: refs
+    name: build ${{ matrix.ref }} ${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
+        ref: ${{ fromJSON(needs.refs.outputs.refs) }}
+        arch: [amd64, arm64]
         include:
-          - platform: linux/amd64
-            arch: amd64
+          - arch: amd64
+            platform: linux/amd64
             runner: ubuntu-24.04
-          - platform: linux/arm64
-            arch: arm64
+          - arch: arm64
+            platform: linux/arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ matrix.ref }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -72,6 +99,6 @@ jobs:
       - name: Upload scan result (3 days)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: selfbuild-${{ matrix.arch }}
+          name: trivy-${{ matrix.ref }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/out/trivy.json
           retention-days: 3
