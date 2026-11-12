@@ -21,6 +21,8 @@ permissions:
   contents: read
 
 env:
+  # build-push-action otherwise uploads a 90-day build-record artifact.
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
   DEFAULT_REFS: '["sci-0.33.6-deps","sci-0.34.1"]'
 
 jobs:
